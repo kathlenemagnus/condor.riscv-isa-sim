@@ -300,7 +300,7 @@ void processor_t::step(size_t n)
           pc = execute_insn_logged(this, pc, fetch);
           if (pc != PC_SERIALIZE_BEFORE) {
             ++stfhandler->executed_instructions;
-	  }
+          }
           advance_pc();
 
           // Resume from debug mode in critical error
@@ -352,6 +352,8 @@ void processor_t::step(size_t n)
     {
       take_trap(t, pc);
       n = instret;
+
+      stfhandler->trace_trap(this,pc,get_state()->pc,t.cause());
 
       // If critical error then enter debug mode critical error trigger enabled
       if (state.critical_error) {

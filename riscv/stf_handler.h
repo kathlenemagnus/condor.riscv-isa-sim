@@ -153,36 +153,51 @@ struct StfHandler
     { return _traced_instructions_region; }
   // ---------------------------------------------------------------- 
   // ---------------------------------------------------------------- 
-  void update_state(processor_t *proc,uint32_t bits,reg_t pc,reg_t npc)
+  void update_state(processor_t *proc,uint32_t bits,reg_t pc,reg_t npc,
+                    bool trap, uint32_t excp_code)
   {
     last_npc = npc;
     is_taken_branch = false;
-    if(pc != npc && npc != PC_SERIALIZE_BEFORE && npc != PC_SERIALIZE_AFTER) {
+    if(pc != npc && npc != PC_SERIALIZE_BEFORE && npc != PC_SERIALIZE_AFTER && !is_trap) {
       insn_bytes = (bits & 0x3) == 0x3 ? 4 : 2;
       is_taken_branch = npc != pc + insn_bytes;
     }
+    is_trap = trap;
+    exception_code = excp_code;
   }
   // ---------------------------------------------------------------- 
   // Common trace instruction method which selects specific trace
   // method based on trace mode
   // ---------------------------------------------------------------- 
   void trace_insn(processor_t *p,insn_fetch_t &fetch,
-                  reg_t pc, reg_t npc, std::string debug="")
+                  reg_t pc, reg_t npc, std::string debug="",
+                  bool trap=false, uint32_t excp_code=0)
   {
-
     //tracing is not being used
     if(!macro_tracing && !insn_num_tracing) {
       LOG("-trace_insn "+debug+" NOTHING SELECTED");
       return;
     }
 
-    update_state(p,fetch.insn.bits(),pc,npc);
+    update_state(p,fetch.insn.bits(),pc,npc,trap,excp_code);
 
     //This is always cleared, set in transistion from fast to slow
     _pending_region = false; 
 
     if(macro_tracing) trace_macro_insn(p,fetch,debug);
     else              trace_count_insn(p,fetch,debug);
+  }
+
+  // ----------------------------------------------------------------
+  // Trace a trap (fault or interrupt)
+  // ----------------------------------------------------------------
+  void trace_trap(processor_t *p, reg_t pc, reg_t npc, uint32_t excp_code, std::string debug="")
+  {
+    // TODO: Determine which traps have valid opcodes
+    insn_fetch_t fetch;
+    fetch.insn = 0;
+    const bool trap = true;
+    trace_insn(p, fetch, pc, npc, debug, trap, excp_code);
   }
 
   // ---------------------------------------------------------------- 
@@ -299,7 +314,7 @@ struct StfHandler
       //Optionally exclude the trace macros from the trace
       if (!include_trace_macros) {
          stf_writer << stf::ForcePCRecord(last_npc);
-	 return;
+         return;
       }
     }
 
@@ -321,7 +336,6 @@ struct StfHandler
 
     //Trace this instruction if it has the right PRIV level and ASID
     bool priv_in_range = is_priv_mode_traceable(state, priv_modes);
-    bool pending_exception = false; //TODO find this in spike
 
     auto  _xlen = proc->get_xlen();
     reg_t _satp = state->satp->read();
@@ -329,8 +343,7 @@ struct StfHandler
     bool asid_match = (reg_t) prog_asid == _asid;
 
     //Instruction number tracing ignores all predicates
-    bool trace_this = (priv_in_range && !pending_exception && asid_match)
-                   || insn_num_tracing;
+    bool trace_this = (priv_in_range && asid_match) || insn_num_tracing;
 
     if(trace_this) {
         uint32_t insn_bytes = (fetch.insn.bits() & 0x3) == 0x3 ? 4 : 2;
@@ -340,7 +353,8 @@ struct StfHandler
         if(is_taken_branch) {
           stf_writer << stf::InstPCTargetRecord(last_npc);
         }
-       // In dromajo there was a possibility that the current instruction
+
+        // In dromajo there was a possibility that the current instruction
         // will cause a page fault/timer interrupt/process switch so
         // the next instruction might not be on the programs path
         // TODO: determine if this is the case in Spike
@@ -355,6 +369,10 @@ struct StfHandler
 
           if(_trace_register_state) {
             emit_register_records(proc);
+          }
+
+          if(is_trap) {
+            stf_writer << stf::EventRecord((stf::EventRecord::TYPE)exception_code, last_npc);
           }
 
           if(insn_bytes == 4) {
@@ -843,6 +861,8 @@ public:
   uint64_t last_npc{0};
   uint32_t insn_bytes{0};
   bool     is_taken_branch{false};
+  bool     is_trap{false};
+  uint32_t exception_code = 0;
 
 private:
   bool _pending_region{false};
