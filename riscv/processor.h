@@ -396,6 +396,8 @@ public:
 
   uint64_t get_last_pc() { return last_pc; }
 
+  uint64_t get_last_bits() { return last_bits; }
+
   bb_tracer& get_bb_tracer() {return m_bb_tracer;}
 
 private:

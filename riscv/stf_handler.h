@@ -191,7 +191,8 @@ struct StfHandler
   // ----------------------------------------------------------------
   // Trace a trap (fault or interrupt)
   // ----------------------------------------------------------------
-  void trace_trap(processor_t *p, reg_t pc, reg_t npc, uint32_t excp_code, std::string debug="")
+  void trace_trap(processor_t *p, reg_t pc, reg_t npc, uint32_t excp_code,
+                  std::string debug="")
   {
     // TODO: Determine which traps have valid opcodes
     insn_fetch_t fetch;
@@ -372,7 +373,60 @@ struct StfHandler
           }
 
           if(is_trap) {
-            stf_writer << stf::EventRecord((stf::EventRecord::TYPE)exception_code, last_npc);
+            // Each STF exception event requires different metadata
+            stf::EventRecord::TYPE type = (stf::EventRecord::TYPE)exception_code;
+            switch(type) {
+              case stf::EventRecord::TYPE::INT_USER_SOFTWARE:
+              case stf::EventRecord::TYPE::INT_SUPERVISOR_SOFTWARE:
+              case stf::EventRecord::TYPE::INT_HYPERVISOR_SOFTWARE:
+              case stf::EventRecord::TYPE::INT_MACHINE_SOFTWARE:
+              case stf::EventRecord::TYPE::INT_USER_TIMER:
+              case stf::EventRecord::TYPE::INT_SUPERVISOR_TIMER:
+              case stf::EventRecord::TYPE::INT_HYPERVISOR_TIMER:
+              case stf::EventRecord::TYPE::INT_MACHINE_TIMER:
+              case stf::EventRecord::TYPE::INT_USER_EXT:
+              case stf::EventRecord::TYPE::INT_SUPERVISOR_EXT:
+              case stf::EventRecord::TYPE::INT_HYPERVISOR_EXT:
+              case stf::EventRecord::TYPE::INT_MACHINE_EXT:
+              case stf::EventRecord::TYPE::INT_COPROCESSOR:
+              case stf::EventRecord::TYPE::INT_HOST:
+                // TODO: Need source of interrupt
+                stf_writer << stf::EventRecord(type, {0ull});
+                break;
+              case stf::EventRecord::TYPE::INST_ADDR_MISALIGN:
+              case stf::EventRecord::TYPE::INST_ADDR_FAULT:
+              case stf::EventRecord::TYPE::BREAKPOINT:
+                stf_writer << stf::EventRecord(type, {proc->get_last_pc()});
+                break;
+              case stf::EventRecord::TYPE::ILLEGAL_INST:
+              case stf::EventRecord::TYPE::VIRTUAL_INST:
+                stf_writer << stf::EventRecord(type, {proc->get_last_pc(), proc->get_last_bits(), _xlen});
+                break;
+              case stf::EventRecord::TYPE::INST_PAGE_FAULT:
+              case stf::EventRecord::TYPE::GUEST_INST_PAGE_FAULT:
+                stf_writer << stf::EventRecord(type, {proc->get_last_pc(), _xlen});
+                break;
+              case stf::EventRecord::TYPE::LOAD_ADDR_MISALIGN:
+              case stf::EventRecord::TYPE::LOAD_ACCESS_FAULT:
+              case stf::EventRecord::TYPE::STORE_ADDR_MISALIGN:
+              case stf::EventRecord::TYPE::STORE_ACCESS_FAULT:
+              case stf::EventRecord::TYPE::LOAD_PAGE_FAULT:
+              case stf::EventRecord::TYPE::GUEST_LOAD_PAGE_FAULT:
+              case stf::EventRecord::TYPE::STORE_PAGE_FAULT:
+              case stf::EventRecord::TYPE::GUEST_STORE_PAGE_FAULT:
+                // TODO: Need virtual addr, inst encoding and target addr
+                stf_writer << stf::EventRecord(type, {proc->get_last_pc(), proc->get_last_bits(), 0ull});
+                break;
+              case stf::EventRecord::TYPE::USER_ECALL:
+              case stf::EventRecord::TYPE::SUPERVISOR_ECALL:
+              case stf::EventRecord::TYPE::HYPERVISOR_ECALL:
+              case stf::EventRecord::TYPE::MACHINE_ECALL:
+                // TODO: Need system call number
+                stf_writer << stf::EventRecord(type, {0ull});
+                break;
+              default:
+                break;
+            }
           }
 
           if(insn_bytes == 4) {
@@ -517,9 +571,25 @@ struct StfHandler
     auto const state = p->get_state();
     //r is std::map<reg_t, freg_t> commit_log_reg_t
     for(auto r : state->log_reg_write) {
+      stf::Registers::STF_REG_TYPE dest_type = stf::Registers::STF_REG_TYPE::INTEGER;
       auto dest_raw = r.first;
-      auto dest_type = (dest_raw & 1) ? stf::Registers::STF_REG_TYPE::FLOATING_POINT :
-                                        stf::Registers::STF_REG_TYPE::INTEGER;
+      switch (dest_raw & 0xf) {
+      case 0:
+        dest_type = stf::Registers::STF_REG_TYPE::INTEGER;
+        break;
+      case 1:
+        dest_type = stf::Registers::STF_REG_TYPE::FLOATING_POINT;
+        break;
+      case 2:
+      case 3:
+        dest_type = stf::Registers::STF_REG_TYPE::VECTOR;
+        break;
+      case 4:
+        dest_type = stf::Registers::STF_REG_TYPE::CSR;
+        break;
+      default:
+        assert("can't been here" && 0);
+      }
       stf_writer << stf::InstRegRecord(dest_raw >> 4,
             dest_type,
             stf::Registers::STF_REG_OPERAND_TYPE::REG_DEST,
