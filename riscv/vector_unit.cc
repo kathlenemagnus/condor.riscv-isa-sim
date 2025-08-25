@@ -151,5 +151,6 @@ template float64_t& vectorUnit_t::elt<float64_t>(reg_t, reg_t, bool);
 
 template EGU32x4_t& vectorUnit_t::elt_group<EGU32x4_t>(reg_t, reg_t, bool);
 template EGU32x8_t& vectorUnit_t::elt_group<EGU32x8_t>(reg_t, reg_t, bool);
+template EGU64x2_t& vectorUnit_t::elt_group<EGU64x2_t>(reg_t, reg_t, bool);
 template EGU64x4_t& vectorUnit_t::elt_group<EGU64x4_t>(reg_t, reg_t, bool);
 template EGU8x16_t& vectorUnit_t::elt_group<EGU8x16_t>(reg_t, reg_t, bool);

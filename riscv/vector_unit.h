@@ -78,6 +78,9 @@ using EGU32x4_t = std::array<uint32_t, 4>;
 // Element Group of 8 32 bits elements (256b total).
 using EGU32x8_t = std::array<uint32_t, 8>;
 
+// Element Group of 2 64 bits elements (128b total).
+using EGU64x2_t = std::array<uint64_t, 2>;
+
 // Element Group of 4 64 bits elements (256b total).
 using EGU64x4_t = std::array<uint64_t, 4>;
 

@@ -569,31 +569,59 @@ struct StfHandler
   // ----------------------------------------------------------------
   void emit_register_records(processor_t *p) {
     auto const state = p->get_state();
+
     //r is std::map<reg_t, freg_t> commit_log_reg_t
-    for(auto r : state->log_reg_write) {
-      stf::Registers::STF_REG_TYPE dest_type = stf::Registers::STF_REG_TYPE::INTEGER;
+    auto& reg_writes = state->log_reg_write;
+    for(auto reg_it=reg_writes.begin();reg_it!=reg_writes.end();++reg_it) {
+      auto& r =  *reg_it;
+      stf::Registers::STF_REG_TYPE dest_type = \
+        stf::Registers::STF_REG_TYPE::INTEGER;
       auto dest_raw = r.first;
       switch (dest_raw & 0xf) {
-      case 0:
-        dest_type = stf::Registers::STF_REG_TYPE::INTEGER;
-        break;
-      case 1:
-        dest_type = stf::Registers::STF_REG_TYPE::FLOATING_POINT;
-        break;
-      case 2:
-      case 3:
-        dest_type = stf::Registers::STF_REG_TYPE::VECTOR;
-        break;
-      case 4:
-        dest_type = stf::Registers::STF_REG_TYPE::CSR;
-        break;
-      default:
-        assert("can't been here" && 0);
+        case 0:
+          dest_type = stf::Registers::STF_REG_TYPE::INTEGER;
+          break;
+        case 1:
+          dest_type = stf::Registers::STF_REG_TYPE::FLOATING_POINT;
+          break;
+        case 2:
+        case 3:
+          dest_type = stf::Registers::STF_REG_TYPE::VECTOR;
+          break;
+        case 4:
+          dest_type = stf::Registers::STF_REG_TYPE::CSR;
+          break;
+        default:
+          assert("can't been here" && 0);
       }
-      stf_writer << stf::InstRegRecord(dest_raw >> 4,
-            dest_type,
-            stf::Registers::STF_REG_OPERAND_TYPE::REG_DEST,
-            r.second.v[0]);
+
+      auto rd = r.first >> 4;
+      const stf::Registers::STF_REG_OPERAND_TYPE dest_op_type = \
+        stf::Registers::STF_REG_OPERAND_TYPE::REG_DEST;
+      if(dest_type != stf::Registers::STF_REG_TYPE::VECTOR) {
+          stf_writer << stf::InstRegRecord(rd, dest_type, dest_op_type,
+                                           r.second.v[0]);
+      }
+      else {
+        auto _vlen = p->get_vlen();
+        std::vector<uint64_t> vec_reg_val;
+        if (_vlen == 128) {
+          vec_reg_val.resize(2);
+          EGU64x2_t vec_reg = p->VU.elt_group<EGU64x2_t>(rd, 0);
+          std::copy(vec_reg.begin(), vec_reg.end(), vec_reg_val.begin());
+        }
+        else if(_vlen == 256) {
+          vec_reg_val.resize(4);
+          EGU64x4_t vec_reg = p->VU.elt_group<EGU64x4_t>(rd, 0);
+          std::copy(vec_reg.begin(), vec_reg.end(), vec_reg_val.begin());
+        }
+        else {
+          assert("unsupported vlen value for tracing!" && 0);
+        }
+
+        stf_writer << stf::InstRegRecord(rd, dest_type, dest_op_type,
+                                         vec_reg_val);
+      }
     }
     state->log_reg_write.clear();
   }
@@ -686,7 +714,9 @@ struct StfHandler
       assert(0);
     } 
 
-    //TODO add support for Vector - add the STF_VLEN_CONFIG record
+    if(proc->any_vector_extensions()) {
+        stf_writer.setVLen(proc->get_vlen());
+    }
 
     stf_writer.setTraceFeature(
       stf::TRACE_FEATURES::STF_CONTAIN_PHYSICAL_ADDRESS

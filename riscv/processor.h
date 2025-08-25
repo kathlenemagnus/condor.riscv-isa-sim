@@ -300,6 +300,9 @@ public:
            extension_enabled('D') ? 64 :
            extension_enabled('F') ? 32 : 0;
   }
+  unsigned get_vlen() const {
+    return VU.VLEN;
+  }
   extension_t* get_extension();
   extension_t* get_extension(const char* name);
   bool any_custom_extensions() const {
