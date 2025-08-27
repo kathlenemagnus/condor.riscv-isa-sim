@@ -577,9 +577,12 @@ struct StfHandler
       stf::Registers::STF_REG_TYPE dest_type = \
         stf::Registers::STF_REG_TYPE::INTEGER;
       auto dest_raw = r.first;
+      auto rd = r.first >> 4;
       switch (dest_raw & 0xf) {
         case 0:
           dest_type = stf::Registers::STF_REG_TYPE::INTEGER;
+          // Don't record read-only register x0
+          if (rd == 0) { continue; }
           break;
         case 1:
           dest_type = stf::Registers::STF_REG_TYPE::FLOATING_POINT;
@@ -595,7 +598,6 @@ struct StfHandler
           assert("can't been here" && 0);
       }
 
-      auto rd = r.first >> 4;
       const stf::Registers::STF_REG_OPERAND_TYPE dest_op_type = \
         stf::Registers::STF_REG_OPERAND_TYPE::REG_DEST;
       if(dest_type != stf::Registers::STF_REG_TYPE::VECTOR) {
